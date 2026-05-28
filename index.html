@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ekonomikoll</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="../style.css" />
+  <link rel="stylesheet" href="start.py">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <header class="hero">
+      <h1>Ekonomikoll</h1>
+      <p>Håll koll på inkomster och utgifter.</p>
+    </header>
+
+    <div class="main-content">
+      <div class="left-column">
+        <section class="cards">
+          <div class="card income">
+            <h2>Inkomst</h2>
+            <div class="value" id="income-value">0 kr</div>
+          </div>
+          <div class="card expense">
+            <h2>Utgift</h2>
+            <div class="value" id="expense-value">0 kr</div>
+          </div>
+          <div class="card balance">
+            <h2>Saldo</h2>
+            <div class="value" id="balance-value">0 kr</div>
+          </div> 
+        </section>
+
+        <section class="form-section">
+          <h2>Lägg till transaktion</h2>
+
+          <form id="tx-form" class="tx-form">
+            <div class="row">
+              <label>
+                Typ
+                <select name="type" required>
+                  <option value="income">Inkomst</option>
+                  <option value="expense">Utgift</option>
+                  <option value="savings">Sparande</option> 
+                </select>
+              </label>
+
+              <label>
+                Belopp (kr)
+                <input name="amount" type="number" step="0.01" min="0.01" required />
+              </label>
+            </div>
+
+            <div class="row">
+              <label>
+                Datum
+                <input name="date" type="date" required />
+              </label>
+
+              <label>
+                Kategori
+                <input name="category" type="text" placeholder="t.ex. mat, lön, hyra" />
+              </label>
+            </div>
+
+            <label class="full">
+              Anteckning
+              <input name="note" type="text" placeholder="valfritt" />
+            </label>
+
+            <div class="actions">
+              <button type="submit">Spara</button>
+              <button class="danger" type="button" id="clear-btn">Rensa allt</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="list-section">
+          <h2>Senaste transaktioner</h2>
+          <div id="transactions-list">
+            <p class="muted">Inga transaktioner ännu.</p>
+          </div>
+        </section>
+      </div>
+
+      <div class="right-column">
+        <div class="chart-container">
+          <h3>Utgifter per kategori</h3>
+          <canvas id="expenseChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card savings">
+  <h2>Sparkonto</h2>
+  <div class="value" id="savings-value">0 kr</div>
+</div>
+<div class="chart-container">
+  <h3>Sparande per månad</h3>
+  <canvas id="savingsChart"></canvas>
+</div>
+ 
+  <script>
+
+let transactions = JSON.parse(localStorage.getItem('transactions')) || [];
+
+let expenseChart = null;
+let savingsChart = null;
+
+/* =========================
+   UPDATE ALL UI
+========================= */
+function updateDisplay() {
+
+  const income = transactions
+    .filter(t => t.type === 'income')
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  const expense = transactions
+    .filter(t => t.type === 'expense')
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  const savings = transactions
+    .filter(t => t.type === 'save')
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  const balance = income - expense - savings;
+
+  document.getElementById('income-value').textContent = income.toFixed(2) + " kr";
+  document.getElementById('expense-value').textContent = expense.toFixed(2) + " kr";
+  document.getElementById('balance-value').textContent = balance.toFixed(2) + " kr";
+  document.getElementById('savings-value').textContent = savings.toFixed(2) + " kr";
+
+  renderTransactions();
+
+  updateExpenseChart();
+  updateSavingsChart();
+}
+
+/* =========================
+   LISTA TRANSAKTIONER
+========================= */
+function renderTransactions() {
+  const container = document.getElementById('transactions-list');
+
+  if (transactions.length === 0) {
+    container.innerHTML = '<p class="muted">Inga transaktioner ännu.</p>';
+    return;
+  }
+
+  container.innerHTML = transactions
+    .slice()
+    .reverse()
+    .map(t => `
+      <div class="transaction ${t.type}">
+        <div>
+          <strong>${t.type.toUpperCase()}</strong> 
+          ${t.amount} kr - ${t.date}
+          <div class="transaction-details">
+            ${t.category || ''} ${t.note ? '- ' + t.note : ''}
+          </div>
+        </div>
+        <button class="danger" onclick="deleteTransaction('${t.id}')">Radera</button>
+      </div>
+    `).join('');
+}
+
+/* =========================
+   DELETE TRANSACTION
+========================= */
+function deleteTransaction(id) {
+  transactions = transactions.filter(t => t.id !== id);
+  localStorage.setItem('transactions', JSON.stringify(transactions));
+  updateDisplay();
+}
+
+/* =========================
+   CLEAR ALL
+========================= */
+document.getElementById('clear-btn').addEventListener('click', () => {
+  if (confirm('Vill du radera allt?')) {
+    transactions = [];
+    localStorage.removeItem('transactions');
+    updateDisplay();
+  }
+});
+
+/* =========================
+   ADD TRANSACTION
+========================= */
+document.getElementById('tx-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+
+  const form = new FormData(e.target);
+
+  transactions.push({
+    id: Date.now(),
+    type: form.get('type'), // income / expense / save
+    amount: parseFloat(form.get('amount')),
+    date: form.get('date'),
+    category: form.get('category'),
+    note: form.get('note')
+  });
+
+  localStorage.setItem('transactions', JSON.stringify(transactions));
+
+  e.target.reset();
+  updateDisplay();
+});
+
+/* =========================
+   EXPENSE CHART
+========================= */
+function updateExpenseChart() {
+  const expenses = transactions.filter(t => t.type === 'expense');
+
+  const dataMap = {};
+
+  expenses.forEach(t => {
+    const cat = t.category || "Okategoriserad";
+    dataMap[cat] = (dataMap[cat] || 0) + parseFloat(t.amount);
+  });
+
+  const labels = Object.keys(dataMap);
+  const data = Object.values(dataMap);
+
+  if (expenseChart) expenseChart.destroy();
+
+  const ctx = document.getElementById('expenseChart').getContext('2d');
+
+  expenseChart = new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels,
+      datasets: [{
+        data
+      }]
+    }
+  });
+}
+
+/* =========================
+   SAVINGS TOTAL (SPARKONTO)
+========================= */
+function updateSavings() {
+  const savings = transactions
+    .filter(t => t.type === "save")
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  document.getElementById("savings-value").textContent =
+    savings.toFixed(2) + " kr";
+}
+
+/* =========================
+   SAVINGS PER MONTH CHART
+========================= */
+function updateSavingsChart() {
+
+  const monthly = {};
+
+  transactions.forEach(t => {
+
+    if (t.type !== "save") return;
+
+    const date = new Date(t.date);
+    if (isNaN(date)) return;
+
+    const month = date.toLocaleString("sv-SE", {
+      year: "numeric",
+      month: "short"
+    });
+
+    if (!monthly[month]) {
+      monthly[month] = 0;
+    }
+
+    monthly[month] += parseFloat(t.amount);
+  });
+
+  const labels = Object.keys(monthly);
+  const data = Object.values(monthly);
+
+  if (savingsChart) savingsChart.destroy();
+
+  const ctx = document.getElementById("savingsChart").getContext("2d");
+
+  savingsChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Sparande per månad",
+        data
+      }]
+    }
+  });
+}
+
+/* =========================
+   INIT
+========================= */
+updateDisplay();
+</script>
+
+
+<footer class="footer">
+  <p>© 2026 Ekonomikoll</p>
+</footer>
+</body>
+</html>
+ 
